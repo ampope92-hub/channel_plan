@@ -1,100 +1,153 @@
-"""Verifier for the skeleton task.
+"""Grades the two channel plans test.sh captured.
 
-Two things are graded independently. The report has to match the approved bytes for the
-shipped inputs, and the agent's own program has to reproduce those bytes when re-run
-against inputs it has never seen. The second is what stops a hand-written report from
-passing: the artifact alone is cheap to fake, re-deriving it on held-out data is not.
+test.sh built the collected C++ and ran it on the shipped survey and on a second survey it had
+never seen, each under a 60-second limit, and moved each plan to a root-only path. This module
+reads those captures, the two surveys and the two optima under /opt; it never runs agent code.
+Every check is one instruction.md states, and both surveys are held to the same checks.
 
-Replace the whole file for a real task, but keep the shape: golden bytes, a held-out
-re-run, and a determinism check.
+The optima are the lowest penalty any legal plan reaches on each survey. They were computed by the
+reference planner (solution/planner.cpp), an exact dynamic programme over the masts in line order,
+whose result was checked against exhaustive search on small surveys, and are stored as integers.
+The penalty of a plan is recomputed here from the survey with integer arithmetic, and the bar is
+applied without rounding, in basis points: total * 10000 <= optimum * (10000 + GAP_BP).
 """
-
+import csv
 import hashlib
-import json
-import shutil
-import subprocess
-from pathlib import Path
+import os
+import pathlib
 
 import pytest
 
-APP = Path("/app")
-SRC = APP / "src" / "summarize.py"
-REPORT = APP / "out" / "report.json"
-DATA = APP / "data"
-HOLDOUT = Path("/tests/holdout")
+GAP_BP = 75  # 0.75%, the bar instruction.md states
 
-# Scratch space owned by the sandbox user; see tests/Dockerfile.
-WORK_OUT = Path("/work/out")
+SHIPPED_SURVEY = pathlib.Path("/app/survey")
+HIDDEN_SURVEY = pathlib.Path("/opt/hidden/survey")
 
-SANDBOX_UID = 12000
-DROP_PRIVILEGES = [
-    "setpriv",
-    f"--reuid={SANDBOX_UID}",
-    f"--regid={SANDBOX_UID}",
-    "--clear-groups",
+RUNS = [
+    pytest.param(pathlib.Path("/opt/plan_shipped.csv"), pathlib.Path("/opt/status_shipped.txt"),
+                 SHIPPED_SURVEY, pathlib.Path("/opt/golden/optimum.txt"), id="shipped"),
+    pytest.param(pathlib.Path("/opt/plan_hidden.csv"), pathlib.Path("/opt/status_hidden.txt"),
+                 HIDDEN_SURVEY, pathlib.Path("/opt/hidden/optimum.txt"), id="hidden"),
 ]
 
-# SHA-256 of the report each input set must produce. Generated from solution/src.
-EXPECTED_PRIMARY = "60fec4718722649de61a0a56094fa49cf19597bd942244b27c77cea81352ce57"
-EXPECTED_HOLDOUT = {"h1": "a3cca7560ba22f8ec8e43ead53cee7566e713086e19c21ef42bd785bc7da77ba"}
+# frozen when the task was built; instruction.md says to leave /app/survey as it shipped
+SHIPPED_SHA = {
+    "radios.csv": "ab77995122921121dad8c9647c6aef872dd6b06716692c399b5fef80a06cc461",
+    "pairs.csv": "b8fe7a448751a90454340442de7ae6d5d28e8a6edbb5314371a1f682e88c8b29",
+    "barred.csv": "bcb672a86781877155777227a5f4379a7694fe55dda1dd36efde5b5e37714903",
+    "licence.txt": "977938088181526990f96fa3b810c91148beae6ecc26aec0a98e0c6b327c146c",
+    "README.md": "934472905439ca3f7e3f17019d5a84be87705bedd522077ad15694f1098c4276",
+}
 
 
-def sha256(path):
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+def _open(path, mode="r"):
+    """Open without following a final symlink."""
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    return os.fdopen(fd, mode) if "b" in mode else os.fdopen(fd, mode, newline="")
 
 
-def run_agent_program(data_dir, out_path):
-    """Runs the agent's own program, unprivileged, against a directory of our choosing."""
-    return subprocess.run(
-        DROP_PRIVILEGES
-        + ["python3", str(SRC), "--data", str(data_dir), "--out", str(out_path)],
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
+def _survey(d):
+    with _open(d / "licence.txt") as fh:
+        word, n = fh.read().split()
+    assert word == "channels"
+    channels = int(n)
+    with _open(d / "radios.csv") as fh:
+        site = {int(r["radio"]): int(r["site"]) for r in csv.DictReader(fh)}
+    with _open(d / "pairs.csv") as fh:
+        pairs = [(int(r["radio_a"]), int(r["radio_b"]), int(r["co_channel"]),
+                  int(r["adjacent_channel"])) for r in csv.DictReader(fh)]
+    with _open(d / "barred.csv") as fh:
+        barred = {(int(r["radio"]), int(r["channel"])) for r in csv.DictReader(fh)}
+    return channels, site, pairs, barred
 
 
-def test_report_exists():
-    """The declared artifact was produced at the documented path."""
-    assert REPORT.is_file(), f"{REPORT} was not created"
+def _plan(path):
+    assert path.exists() and not path.is_symlink(), f"no plan was written on this run ({path.name})"
+    with _open(path) as fh:
+        text = fh.read()
+    lines = text.splitlines()
+    assert lines and lines[0].strip() == "radio,channel", (
+        f"the plan's first line must be the header radio,channel, got {lines[:1]!r}")
+    plan = {}
+    for n, line in enumerate(lines[1:], start=2):
+        if not line.strip():
+            continue
+        cells = line.strip().split(",")
+        assert len(cells) == 2, f"line {n} of the plan is not radio,channel: {line!r}"
+        try:
+            radio, ch = int(cells[0]), int(cells[1])
+        except ValueError:
+            raise AssertionError(f"line {n} of the plan is not two integers: {line!r}")
+        assert radio not in plan, f"radio {radio} appears more than once in the plan"
+        plan[radio] = ch
+    return plan
 
 
-def test_report_is_valid_json():
-    """The report parses and carries the documented top-level keys."""
-    data = json.loads(REPORT.read_text())
-    assert set(data) == {"files", "total_words"}, f"unexpected top-level keys: {sorted(data)}"
+def _penalty(plan, pairs):
+    total = 0
+    for a, b, co, adj in pairs:
+        d = abs(plan[a] - plan[b])
+        total += co if d == 0 else (adj if d == 1 else 0)
+    return total
 
 
-def test_report_matches_approved_bytes():
-    """The report is byte-identical to the approved output for the shipped inputs."""
-    actual = sha256(REPORT)
-    assert actual == EXPECTED_PRIMARY, (
-        f"report.json does not match the approved bytes\n"
-        f"  expected sha256 {EXPECTED_PRIMARY}\n  actual   sha256 {actual}"
-    )
+def test_shipped_survey_unchanged():
+    """The five files in /app/survey are byte for byte what shipped."""
+    for name, digest in SHIPPED_SHA.items():
+        with _open(SHIPPED_SURVEY / name, "rb") as fh:
+            got = hashlib.sha256(fh.read()).hexdigest()
+        assert got == digest, f"/app/survey/{name} was changed"
 
 
-@pytest.mark.parametrize("name", sorted(EXPECTED_HOLDOUT))
-def test_holdout_reproduces_approved_bytes(name):
-    """Re-running the agent's program on unseen inputs reproduces the approved bytes.
-
-    This is the anti-cheat axis: it proves the report on disk was generated by the
-    program rather than written by hand or pinned to the shipped fixtures.
-    """
-    out = WORK_OUT / f"{name}.json"
-    result = run_agent_program(HOLDOUT / name, out)
-    assert result.returncode == 0, f"program failed on held-out set {name}:\n{result.stderr}"
-
-    actual = sha256(out)
-    assert actual == EXPECTED_HOLDOUT[name], (
-        f"held-out set {name} did not reproduce the approved bytes\n"
-        f"  expected sha256 {EXPECTED_HOLDOUT[name]}\n  actual   sha256 {actual}"
-    )
+@pytest.mark.parametrize("plan_path,status_path,survey,optimum_path", RUNS)
+def test_run_finished_inside_limit(plan_path, status_path, survey, optimum_path):
+    """The planner finished inside the 60 seconds each run gets."""
+    with _open(status_path) as fh:
+        status = fh.read().strip()
+    assert status == "finished", (
+        "the planner was stopped at the 60-second limit" if status == "killed"
+        else "there was no built planner to run")
 
 
-def test_output_is_deterministic():
-    """Two runs over the same inputs produce identical bytes."""
-    first, second = WORK_OUT / "det-1.json", WORK_OUT / "det-2.json"
-    for out in (first, second):
-        assert run_agent_program(DATA, out).returncode == 0, "program failed on shipped inputs"
-    assert sha256(first) == sha256(second), "program output is not deterministic"
+@pytest.mark.parametrize("plan_path,status_path,survey,optimum_path", RUNS)
+def test_plan_covers_every_radio_once(plan_path, status_path, survey, optimum_path):
+    """The plan has the header and exactly one row for every radio in radios.csv, no others."""
+    _, site, _, _ = _survey(survey)
+    plan = _plan(plan_path)
+    missing = sorted(set(site) - set(plan))
+    extra = sorted(set(plan) - set(site))
+    assert not missing, f"{len(missing)} radios have no channel, e.g. {missing[:5]}"
+    assert not extra, f"{len(extra)} rows name radios that are not in the survey, e.g. {extra[:5]}"
+
+
+@pytest.mark.parametrize("plan_path,status_path,survey,optimum_path", RUNS)
+def test_plan_is_legal(plan_path, status_path, survey, optimum_path):
+    """Channels are in the licence, none is barred for its radio, and radios on one mast are two apart."""
+    channels, site, _, barred = _survey(survey)
+    plan = _plan(plan_path)
+    assert set(plan) == set(site), "the plan does not cover exactly the survey's radios"
+    outside = [r for r, c in plan.items() if not 0 <= c < channels]
+    assert not outside, f"{len(outside)} radios are on channels outside 0..{channels - 1}, e.g. {outside[:5]}"
+    on_barred = sorted(r for r, c in plan.items() if (r, c) in barred)
+    assert not on_barred, f"{len(on_barred)} radios are on a channel barred for them, e.g. {on_barred[:5]}"
+    by_site = {}
+    for r, s in site.items():
+        by_site.setdefault(s, []).append(plan[r])
+    close = sorted(s for s, chans in by_site.items()
+                   for i in range(len(chans)) for j in range(i + 1, len(chans))
+                   if abs(chans[i] - chans[j]) < 2)
+    assert not close, f"{len(set(close))} masts have radios less than two channels apart, e.g. {close[:5]}"
+
+
+@pytest.mark.parametrize("plan_path,status_path,survey,optimum_path", RUNS)
+def test_penalty_within_gap_of_optimum(plan_path, status_path, survey, optimum_path):
+    """The plan's total penalty is no more than 0.75% above the survey's optimum."""
+    _, site, pairs, _ = _survey(survey)
+    plan = _plan(plan_path)
+    assert set(plan) == set(site), "the plan does not cover exactly the survey's radios"
+    with _open(optimum_path) as fh:
+        optimum = int(fh.read().strip())
+    total = _penalty(plan, pairs)
+    assert total * 10000 <= optimum * (10000 + GAP_BP), (
+        f"total penalty {total} is {100.0 * (total - optimum) / optimum:.2f}% above the lowest "
+        f"a legal plan reaches here; the bar is {GAP_BP / 100}%")
