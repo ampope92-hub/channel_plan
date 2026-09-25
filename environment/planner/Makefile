@@ -1,4 +1,4 @@
-# Builds the channel planner. Standard library only; these are the flags used when it is graded.
+# Builds the channel planner with the flags used when it is graded.
 CXX ?= g++
 CXXFLAGS ?= -O2 -std=c++17
 

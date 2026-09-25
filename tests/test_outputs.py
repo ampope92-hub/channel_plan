@@ -15,6 +15,7 @@ import csv
 import hashlib
 import os
 import pathlib
+import re
 
 import pytest
 
@@ -64,20 +65,15 @@ def _survey(d):
 def _plan(path):
     assert path.exists() and not path.is_symlink(), f"no plan was written on this run ({path.name})"
     with _open(path) as fh:
-        text = fh.read()
-    lines = text.splitlines()
-    assert lines and lines[0].strip() == "radio,channel", (
-        f"the plan's first line must be the header radio,channel, got {lines[:1]!r}")
+        lines = fh.read().split("\n")
+    if lines[-1] == "":
+        lines.pop()
+    assert lines[:1] == ["radio,channel"], (
+        f"the plan's first line must be exactly the header radio,channel, got {lines[:1]!r}")
     plan = {}
     for n, line in enumerate(lines[1:], start=2):
-        if not line.strip():
-            continue
-        cells = line.strip().split(",")
-        assert len(cells) == 2, f"line {n} of the plan is not radio,channel: {line!r}"
-        try:
-            radio, ch = int(cells[0]), int(cells[1])
-        except ValueError:
-            raise AssertionError(f"line {n} of the plan is not two integers: {line!r}")
+        assert re.fullmatch(r"[0-9]+,[0-9]+", line), f"line {n} of the plan is not radio,channel: {line!r}"
+        radio, ch = map(int, line.split(","))
         assert radio not in plan, f"radio {radio} appears more than once in the plan"
         plan[radio] = ch
     return plan

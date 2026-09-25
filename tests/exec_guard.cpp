@@ -3,8 +3,8 @@
    there on the process may not start another program (execve, execveat), may not make an unnamed
    file or shared segment to carry code in, and may not turn any memory executable, new or old,
    file-backed or anonymous. Shared libraries the build links against are mapped by the loader
-   before this runs and are unaffected, so nothing a planner written against the standard library
-   needs is taken away; what is taken away is running code that did not come out of the compiler.
+   before this runs and are unaffected, so nothing an ordinary compiled planner needs is taken
+   away; what is taken away is running code that did not come out of the compiler.
    Every call is the syscall instruction itself rather than a libc function, because a source file
    in the same executable could define its own prctl and the linker would prefer it. The filter is
    read back from the kernel and the program stops if it is not in force. */

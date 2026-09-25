@@ -175,7 +175,7 @@ chown -R root:root "$staged"
 chmod 444 "$staged"/*
 chmod 755 "$staged"
 echo "=== second survey ==="
-run_once "$staged" /app/out/plan.csv /opt/plan_hidden.csv /opt/status_hidden.txt
+run_once "$staged" /app/out/plan_second.csv /opt/plan_hidden.csv /opt/status_hidden.txt
 rm -rf "$staged"
 
 sweep_runner
