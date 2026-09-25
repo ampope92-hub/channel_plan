@@ -65,15 +65,12 @@ def _survey(d):
 def _plan(path):
     assert path.exists() and not path.is_symlink(), f"no plan was written on this run ({path.name})"
     with _open(path) as fh:
-        lines = fh.read().split("\n")
-    if lines[-1] == "":
-        lines.pop()
-    assert lines[:1] == ["radio,channel"], (
-        f"the plan's first line must be exactly the header radio,channel, got {lines[:1]!r}")
+        rows = [row for row in csv.reader(fh) if row]  # a blank line is no record
+    assert rows[:1] == [["radio", "channel"]], f"the plan's header must be radio,channel, got {rows[:1]!r}"
     plan = {}
-    for n, line in enumerate(lines[1:], start=2):
-        assert re.fullmatch(r"[0-9]+,[0-9]+", line), f"line {n} of the plan is not radio,channel: {line!r}"
-        radio, ch = map(int, line.split(","))
+    for n, row in enumerate(rows[1:], start=2):
+        assert len(row) == 2 and all(re.fullmatch(r"[0-9]+", c) for c in row), f"record {n} is {row!r}"
+        radio, ch = map(int, row)
         assert radio not in plan, f"radio {radio} appears more than once in the plan"
         plan[radio] = ch
     return plan

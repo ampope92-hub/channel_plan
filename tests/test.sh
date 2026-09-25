@@ -65,17 +65,14 @@ sweep_runner() {
 }
 
 # Only /app/planner/src is part of the contract. Anything else collected under /app/planner goes,
-# a subdirectory of src goes, and of src only .cpp files and header files directly in it are
-# kept, handed to root and made read-only, so the build user compiles them but cannot change them
-# or run anything out of them. The agent's Makefile is not used: the graded build is the command
+# a subdirectory of src goes, and of src only the regular files directly in it are kept, handed
+# to root and made read-only, so the build user compiles them but cannot change them or run
+# anything out of them. The agent's Makefile is not used: the graded build is the command
 # below.
 find /app/planner -mindepth 1 -depth ! -path /app/planner/src ! -path '/app/planner/src/*' \
      -delete 2>/dev/null || true
 find /app/planner/src -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
-find /app/planner/src -mindepth 1 \
-     \( ! -type f -o \( ! -name '*.cpp' ! -name '*.h' ! -name '*.hpp' ! -name '*.hh' \
-        ! -name '*.hxx' ! -name '*.inc' ! -name '*.ipp' ! -name '*.tcc' \) \) \
-     -delete 2>/dev/null || true
+find /app/planner/src -mindepth 1 ! -type f -delete 2>/dev/null || true
 if [ ! -f /app/planner/src/planner.cpp ] || [ -L /app/planner/src/planner.cpp ]; then
   echo "FATAL: /app/planner/src/planner.cpp is not a regular file in the collected project; not graded."
   echo 0 > /logs/verifier/reward.txt
