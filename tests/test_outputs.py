@@ -69,7 +69,7 @@ def _plan(path):
     assert rows[:1] == [["radio", "channel"]], f"the plan's header must be radio,channel, got {rows[:1]!r}"
     plan = {}
     for n, row in enumerate(rows[1:], start=2):
-        assert len(row) == 2 and all(re.fullmatch(r"[0-9]+", c) for c in row), f"record {n} is {row!r}"
+        assert len(row) == 2 and all(re.fullmatch(r"[+-]?[0-9]+", c) for c in row), f"record {n} is {row!r}"
         radio, ch = map(int, row)
         assert radio not in plan, f"radio {radio} appears more than once in the plan"
         plan[radio] = ch
