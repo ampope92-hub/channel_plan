@@ -18,7 +18,7 @@ import sys
 # distances are in tenths of a kilometre
 SHIPPED = {'seed': 20260924, 'sites': 300, 'channels': 6, 'spacing': (30, 70), 'reach': 180,
            'scale': 120, 'zones': 3}
-HIDDEN = {'seed': 77031, 'sites': 420, 'channels': 7, 'spacing': (24, 60), 'reach': 160,
+HIDDEN = {'seed': 14, 'sites': 500, 'channels': 7, 'spacing': (22, 55), 'reach': 180,
           'scale': 90, 'zones': 4}
 
 

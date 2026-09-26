@@ -145,11 +145,9 @@ run_once() {
   sweep_runner
   open_tools
   echo "run on $data: exit $rc after $((t1 - t0)) ms"
-  if [ "$rc" -eq 137 ]; then
-    echo "killed" > "$status"
-  else
-    echo "finished" > "$status"
-  fi
+  # "killed" only when the run was stopped at the limit; the planner's own exit status is not graded
+  if { [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; } && [ $((t1 - t0)) -ge $((RUN_LIMIT * 1000)) ]; then
+    echo "killed" > "$status"; else echo "finished" > "$status"; fi
   chmod 600 "$status"
   if [ -L "$wrote" ] || [ ! -f "$wrote" ]; then
     echo "no regular file at $wrote after the run on $data"
