@@ -51,6 +51,10 @@ RUN mkdir -p /app/planner/src /app/survey /app/out \
 COPY golden /opt/golden
 RUN chmod 700 /opt/golden && chmod 600 /opt/golden/*
 
+# The same two optima as solution/certify.cpp proved them, apart from the reference, root-only.
+COPY golden_ref /opt/golden_ref
+RUN chmod 700 /opt/golden_ref && chmod 600 /opt/golden_ref/*
+
 # The second survey and its lowest penalty. test.sh stages the survey for the planner only after
 # the build has finished; the optimum never leaves root.
 COPY hidden /opt/hidden

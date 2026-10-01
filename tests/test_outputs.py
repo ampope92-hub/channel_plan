@@ -5,14 +5,15 @@ never seen, each under a 60-second limit, and moved each plan to a root-only pat
 reads those captures, the two surveys and the two optima under /opt; it never runs agent code.
 Every check is one instruction.md states, and both surveys are held to the same checks.
 
-The optima are the lowest penalty any legal plan reaches on each survey, stored as integers. They
-come from the dynamic programme over the masts in line order in solution/planner.cpp, exact on the
-shipped survey and run exactly without its state bound for the second one.
+The optima are the lowest penalty any legal plan reaches on each survey, stored as integers, and
+derived twice: by the reference, solution/planner.cpp, and by solution/certify.cpp, an exact search
+written apart from it, whose results sit in /opt/golden_ref. The first test checks they agree.
 The penalty of a plan is recomputed here from the survey with integer arithmetic, and the bar is
 applied without rounding, in basis points: total * 10000 <= optimum * (10000 + GAP_BP).
 """
 import csv
 import hashlib
+import json
 import os
 import pathlib
 import re
@@ -82,6 +83,16 @@ def _penalty(plan, pairs):
         d = abs(plan[a] - plan[b])
         total += co if d == 0 else (adj if d == 1 else 0)
     return total
+
+
+def test_two_references_agree():
+    """Fixture consistency: each stored optimum equals the one solution/certify.cpp proved."""
+    for name, optimum_path in (("shipped", "/opt/golden/optimum.txt"), ("hidden", "/opt/hidden/optimum.txt")):
+        with _open(optimum_path) as fh:
+            stored = int(fh.read().strip())
+        with _open(f"/opt/golden_ref/{name}.json") as fh:
+            proved = json.load(fh)["optimum"]
+        assert stored == proved, f"{name}: the reference's optimum {stored} is not the certified {proved}"
 
 
 def test_shipped_survey_unchanged():

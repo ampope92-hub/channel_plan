@@ -20,7 +20,7 @@ as_runner() {
 # If the build user can still reach them, the run is abandoned ungraded (reward 0).
 chmod 700 /tests 2>/dev/null || true
 chmod 700 /logs/verifier 2>/dev/null || true
-if as_runner bash -c 'test -r /tests/test_outputs.py || ls /opt/golden || ls /opt/hidden' >/dev/null 2>&1; then
+if as_runner bash -c 'test -r /tests/test_outputs.py || ls /opt/golden || ls /opt/golden_ref || ls /opt/hidden' >/dev/null 2>&1; then
   echo "FATAL: /tests or the keys are reachable by the build user; this run cannot be graded."
   echo 0 > /logs/verifier/reward.txt
   exit 0
